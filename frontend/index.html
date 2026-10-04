@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>制造计划助手 · 前端看板（API 驱动）</title>
+<style>
+  :root{--bg:#0f172a;--panel:#1e293b;--panel2:#26334d;--line:#334155;--text:#e2e8f0;--muted:#94a3b8;--acc:#38bdf8;--acc2:#22d3ee;--ok:#34d399;--warn:#fbbf24;--danger:#f87171;--violet:#a78bfa}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif;line-height:1.5}
+  .wrap{max-width:1240px;margin:0 auto;padding:26px 20px 60px}
+  header{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap;margin-bottom:20px}
+  header h1{margin:0;font-size:22px} header h1 span{color:var(--acc)}
+  header p{margin:4px 0 0;color:var(--muted);font-size:13px}
+  .chip{background:var(--panel2);border:1px solid var(--line);color:var(--acc);padding:4px 10px;border-radius:99px;font-size:12px;white-space:nowrap}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px;margin-bottom:18px}
+  .panel h2{margin:0 0 4px;font-size:16px}
+  .panel .sub{margin:0 0 12px;color:var(--muted);font-size:13px}
+  .grid-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px;margin-bottom:18px}
+  .kpi{background:linear-gradient(160deg,var(--panel2),var(--panel));border:1px solid var(--line);border-radius:14px;padding:14px}
+  .kpi .label{color:var(--muted);font-size:12px}
+  .kpi .val{font-size:22px;font-weight:700;margin-top:3px}
+  .kpi .val.ok{color:var(--ok)} .kpi .val.warn{color:var(--warn)} .kpi .val.acc{color:var(--acc)}
+  .controls{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:6px}
+  .ctl label{display:block;color:var(--muted);font-size:12px;margin-bottom:6px}
+  input,select,button{border:1px solid var(--line);background:var(--panel2);color:var(--text);border-radius:8px;padding:8px 10px;font-size:13px}
+  button{cursor:pointer}
+  button.primary{background:linear-gradient(90deg,var(--acc),var(--acc2));color:#062;font-weight:600}
+  button:active{transform:translateY(1px)}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{padding:7px 9px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap}
+  th:first-child,td:first-child{text-align:left}
+  th{color:var(--muted);font-weight:600;font-size:12px}
+  tbody tr:hover{background:rgba(56,189,248,.05)}
+  .pill{display:inline-block;padding:2px 8px;border-radius:99px;font-size:11px;font-weight:600}
+  .pill.ok{background:rgba(52,211,153,.15);color:var(--ok)}
+  .pill.warn{background:rgba(251,191,36,.15);color:var(--warn)}
+  .pill.danger{background:rgba(248,113,113,.15);color:var(--danger)}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  @media(max-width:860px){.grid2{grid-template-columns:1fr}}
+  .scroll{overflow-x:auto}
+  .note{color:var(--muted);font-size:12px;margin-top:8px;line-height:1.7}
+  .err{white-space:pre-wrap;color:var(--danger);font-size:12px}
+  .warnbox{margin:6px 0;padding:8px 11px;border-radius:8px;font-size:13px;line-height:1.6}
+  .warnbox.warn{background:rgba(251,191,36,.10);border:1px solid rgba(251,191,36,.45);color:#fde68a}
+  .warnbox.danger{background:rgba(248,113,113,.12);border:1px solid rgba(248,113,113,.5);color:var(--danger)}
+  .warnbox.ok{background:rgba(52,211,153,.10);border:1px solid rgba(52,211,153,.4);color:var(--ok)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>制造计划助手 <span>· API 看板</span></h1>
+      <p>真实数据库 + 后端算法（statsmodels 预测 / PuLP MILP）· 前端只读写接口</p>
+    </div>
+    <span class="chip" id="authChip">未登录</span>
+  </header>
+
+  <div class="panel">
+    <h2>登录（所有接口需 JWT；写/计划/采购需 admin 或 planner）</h2>
+    <div class="controls">
+      <div><label>后端地址</label><input id="apiBase" value="http://127.0.0.1:8000" style="width:220px"></div>
+      <div><label>用户名</label><input id="u" value="admin" style="width:100px"></div>
+      <div><label>密码</label><input id="p" type="password" value="admin123" style="width:110px"></div>
+      <button id="btnLogin" class="primary">登录并加载</button>
+      <button id="btnRunPlan">运行计划</button>
+      <button id="btnForecast">预测</button>
+      <button id="btnPO">生成采购订单</button>
+    </div>
+    <div class="note" id="loginMsg"></div>
+  </div>
+
+  <div class="grid-cards" id="kpis"></div>
+
+  <div class="grid2">
+    <div class="panel"><h2>产品</h2>
+      <div class="controls" style="margin-bottom:8px">
+        <input id="npCode" placeholder="编码 如 P-D" style="width:100px">
+        <input id="npName" placeholder="名称 如 成品D" style="width:110px">
+        <input id="npCost" type="number" placeholder="成本" style="width:70px">
+        <button id="btnAddProduct">新建产品</button>
+      </div>
+      <div class="scroll" id="products"></div></div>
+    <div class="panel"><h2>物料</h2><div class="scroll" id="materials"></div></div>
+    <div class="panel"><h2>库存</h2><div class="scroll" id="inventory"></div></div>
+    <div class="panel"><h2>订单（可增删）</h2>
+      <div class="controls" style="margin-bottom:8px">
+        <select id="oProd" style="width:130px"></select><input id="oWeek" type="number" placeholder="周" style="width:60px">
+        <input id="oQty" type="number" placeholder="数量" style="width:70px"><button id="btnAddOrder">新增订单</button>
+      </div>
+      <div class="scroll" id="orders"></div>
+    </div>
+  </div>
+
+  <div class="panel"><h2>需求预测（statsmodels）</h2><div id="fcChart" style="width:100%;height:220px"></div><div class="scroll" id="forecast"></div></div>
+  <div class="panel"><h2>计划结果（/plan/run · MILP）</h2><div id="planChart" style="width:100%;height:220px"></div><div class="scroll" id="plan"></div></div>
+  <div class="panel"><h2>采购订单</h2><div class="scroll" id="po"></div></div>
+  <div id="err" class="err"></div>
+</div>
+<script>
+const $=id=>document.getElementById(id);
+const money=n=>'€'+Number(n||0).toLocaleString('en-US');
+const fmt=n=>n==null?'-':Number(n).toLocaleString('en-US');
+const esc=s=>String(s==null?'':s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+const thead=xs=>'<tr>'+xs.map(x=>'<th>'+esc(x)+'</th>').join('')+'</tr>';
+const trow=xs=>'<tr>'+xs.map(x=>'<td>'+esc(x)+'</td>').join('')+'</tr>';
+
+// 分组柱状图（SVG，风格对齐单文件 demo）
+function groupBars(elId, keys, rows, colors){
+  const el=$(elId); const W=el.clientWidth||980,H=220,padL=44,padR=12,padT=16,padB=28;
+  const innerW=W-padL-padR, innerH=H-padT-padB;
+  let max=0; rows.forEach(r=>keys.forEach(k=>{const v=r.values[k]||0;if(v>max)max=v;}));
+  if(max<=0)max=1; max=Math.ceil(max*1.15/10)*10;
+  const n=rows.length,bw=innerW/n,gw=bw*0.62,barW=gw/keys.length;
+  const pals=['#38bdf8','#22d3ee','#a78bfa'];
+  const pain=(j)=> (colors&&colors[keys[j]])||pals[j%3];
+  let s=`<svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}">`;
+  for(let g=0;g<=4;g++){const y=padT+innerH-g*innerH/4;const v=max*g/4;
+    s+=`<line x1="${padL}" y1="${y}" x2="${W-padR}" y2="${y}" stroke="#334155" stroke-width="1" stroke-dasharray="3 3"/><text x="${padL-5}" y="${y+4}" fill="#94a3b8" font-size="10" text-anchor="end">${Math.round(v)}</text>`;}
+  rows.forEach((r,i)=>{const cx=padL+bw*i+bw/2;
+    keys.forEach((k,j)=>{const v=r.values[k]||0;const h=innerH*v/max;const x=cx-gw/2+j*barW+1;const y=padT+innerH-h;
+      s+=`<rect x="${x}" y="${y}" width="${Math.max(1,barW-2)}" height="${h}" rx="2" fill="${pain(j)}"/>`;
+      if(h>14)s+=`<text x="${x+barW/2}" y="${y+12}" fill="#0f172a" font-size="9" text-anchor="middle">${fmt(Math.round(v))}</text>`;});
+    s+=`<text x="${cx}" y="${padT+innerH+16}" fill="#94a3b8" font-size="10" text-anchor="middle">${esc(r.label)}</text>`;});
+  s+='</svg>'; el.innerHTML=s;
+}
+
+let TOKEN='', ROLE='';
+let MAT_NAME={}, PROD_NAME={};
+let MAT_BY_ID={}, PROD_BY_ID={};
+const mn=c=>MAT_NAME[c]||c;
+const pn=c=>PROD_NAME[c]||c;
+const midn=id=>MAT_BY_ID[id]||MAT_NAME[id]||id;
+const pidn=id=>PROD_BY_ID[id]||PROD_NAME[id]||id;
+
+function optionTxt(o){
+  if(!o) return '优化：－';
+  if(o.method==='milp'){
+    const save=o.saving!=null?money(o.saving):'－';
+    const pct=(o.heuristic_cost&&o.saving!=null&&o.heuristic_cost>0)?(100*o.saving/o.heuristic_cost).toFixed(1)+'%':'－';
+    return '优化方法：MILP（混合整数规划）· 状态：'+esc(o.status||'－')+' · 优化后成本 '+money(o.milp_cost)+' · 基准(启发式)成本 '+money(o.heuristic_cost)+' · 节省 '+save+'（'+pct+'）';
+  }
+  return '优化方法：'+(o.method==='heuristic'?'容量均衡启发式':'按需投产');
+}
+function renderWarns(ws){
+  if(!ws||!ws.length) return '<div class="warnbox ok">✅ 计划可行，未触发任何风险预警。</div>';
+  return ws.map(w=>{
+    if(w.type==='lead_time'){
+      const nm=mn(w.material); const late=w.arrival_week-w.week;
+      const sev=late>=2?'danger':'warn';
+      const txt=late>=2
+        ?'<b>断料风险</b>：第'+w.week+'周的需求现在下单，最快第'+w.arrival_week+'周到货，晚了'+late+'周，可能造成生产线缺料停工（关键长交期件尤其要重视）。'
+        :'第'+w.week+'周的需求最快第'+w.arrival_week+'周到货，晚了'+late+'周，需关注是否影响排产。';
+      return '<div class="warnbox '+sev+'">🔧 <b>'+esc(nm)+'</b>（'+esc(w.material)+'）· '+w.qty+' 件 · 采购提前期 '+w.lead_days+' 天 · '+txt+'</div>';
+    }
+    if(w.type==='capacity'){
+      return '<div class="warnbox danger">⚠️ <b>第'+w.week+'周产能超载</b>：计划 '+w.planned+' 件 &gt; 产能 '+w.capacity+' 件，超出 '+w.over+' 件。</div>';
+    }
+    return '<div class="warnbox warn">['+esc(w.type)+'] '+esc(JSON.stringify(w))+'</div>';
+  }).join('');
+}
+const base=()=>$('apiBase').value||'http://127.0.0.1:8000';
+async function api(path,opts={}){
+  if(!TOKEN) throw new Error('请先登录');
+  const h={'Content-Type':'application/json'};
+  if(TOKEN) h.Authorization='Bearer '+TOKEN;
+  const init={method:opts.method||'GET',headers:h};
+  if(opts.body) init.body=JSON.stringify(opts.body);
+  const res=await fetch(base()+path,init);
+  if(res.status===401){ throw new Error('登录失效，请重新登录'); }
+  if(!res.ok){ const t=await res.text().catch(()=>''); throw new Error(res.status+' '+res.statusText+' '+t.slice(0,160)); }
+  if(res.status===204){ return null; }
+  return res.json();
+}
+const note=(m)=>$('loginMsg').textContent=m;
+function showErr(e){ $('err').textContent='错误: '+(e&&e.message||e); }
+
+async function doLogin(){
+  try{
+    const r=await fetch(base()+'/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({username:$('u').value,password:$('p').value})});
+    if(!r.ok) throw new Error('登录失败（账号或密码错误）');
+    const j=await r.json(); TOKEN=j.token; ROLE=j.role||'';
+    $('authChip').textContent='已登录 · '+ (ROLE||'') + (ROLE==='viewer'?'（只读）':'（可写/计划/采购）');
+    note('已登录，正在加载数据…'); await loadMain(); note('已登录。');
+  }catch(e){ note(e.message); }
+}
+async function loadMain(){
+  try{
+    const [p,m]=await Promise.all([api('/api/products'),api('/api/materials')]);
+    p.forEach(x=>{PROD_NAME[x.code]=x.name; PROD_BY_ID[x.id]=x.name;});
+    m.forEach(x=>{MAT_NAME[x.code]=x.name; MAT_BY_ID[x.id]=x.name;});
+    $('oProd').innerHTML=p.map(x=>'<option value="'+x.id+'">'+esc(x.name)+'（'+esc(x.code)+'）</option>').join('');
+    $('products').innerHTML='<table><thead>'+thead(['编码','名称','成本'])+'</thead><tbody>'+p.map(x=>trow([x.code,esc(x.name),money(x.unit_cost)])).join('')+'</tbody></table>';
+    $('materials').innerHTML='<table><thead>'+thead(['物料','提前期','安全库存','现有库存','类型','供应商','操作'])+'</thead><tbody>'+
+      m.map(x=>'<tr><td>'+esc(x.name)+'（'+esc(x.code)+'）</td><td>'+x.lead_days+'天</td>'+
+        '<td><input class="ms num" data-id="'+x.id+'" value="'+x.safety_stock+'" style="width:60px"></td>'+
+        '<td>'+x.on_hand+'</td><td>'+esc(x.type||'')+'</td><td>'+esc(x.supplier_name||'-')+'</td>'+
+        '<td><button class="ms-save" data-id="'+x.id+'">改安全库存</button></td></tr>').join('')+'</tbody></table>';
+    document.querySelectorAll('.ms-save').forEach(b=>b.onclick=async()=>{
+      try{
+        const id=b.dataset.id, x=m.find(o=>o.id===id);
+        const ss=+document.querySelector('.ms[data-id="'+id+'"]').value;
+        await api('/api/materials/'+id,{method:'PUT',body:{code:x.code,name:x.name,type:x.type||'Comp',cost:x.cost,lead_days:x.lead_days,supplier_id:x.supplier_id||null,safety_stock:ss,on_hand:x.on_hand,critical:x.critical||false}});
+        loadMain();
+      }catch(e){showErr(e);}
+    });
+    const [iv,od]=await Promise.all([api('/api/inventory'),api('/api/orders')]);
+    $('inventory').innerHTML='<table><thead>'+thead(['物料','现有库存','在途','操作'])+'</thead><tbody>'+
+      iv.map(r=>'<tr><td>'+esc(midn(r.material_id))+'</td>'+
+        '<td><input class="iv num" data-mid="'+r.material_id+'" data-f="on_hand" value="'+r.on_hand+'" style="width:64px"></td>'+
+        '<td><input class="iv num" data-mid="'+r.material_id+'" data-f="in_transit" value="'+r.in_transit+'" style="width:64px"></td>'+
+        '<td><button class="iv-save" data-mid="'+r.material_id+'">保存</button></td></tr>').join('')+'</tbody></table>';
+    document.querySelectorAll('.iv-save').forEach(b=>b.onclick=async()=>{
+      try{
+        const mid=b.dataset.mid;
+        const oh=+document.querySelector('.iv[data-mid="'+mid+'"][data-f="on_hand"]').value;
+        const it=+document.querySelector('.iv[data-mid="'+mid+'"][data-f="in_transit"]').value;
+        await api('/api/inventory',{method:'POST',body:{material_id:mid,on_hand:oh,in_transit:it}});
+        loadMain();
+      }catch(e){showErr(e);}
+    });
+    renderOrders(od);
+    const pending=(await api('/api/po?status=pending')).length;
+    $('kpis').innerHTML=[['产品数',p.length,'','acc'],['物料数',m.length,'','acc'],['订单数',od.length,'',''],['待审批采购单',pending,'（需 admin/planner 审批）','warn']]
+      .map(x=>'<div class="kpi"><div class="label">'+x[0]+'</div><div class="val '+(x[3]||'')+'">'+x[1]+'</div><div class="note">'+(x[2]||'')+'</div></div>').join('');
+  }catch(e){ showErr(e); }
+}
+async function renderOrders(od){
+  $('orders').innerHTML='<table><thead>'+thead(['产品','周','数量',''])+'</thead><tbody>'+
+    od.map(o=>'<tr><td>'+esc(pidn(o.product_id))+'</td><td>'+o.week+'</td><td>'+o.qty+'</td><td><button data-del="'+o.id+'">删</button></td></tr>').join('')+'</tbody></table>';
+  document.querySelectorAll('[data-del]').forEach(b=>b.onclick=async()=>{try{await api('/api/orders/'+b.dataset.del,{method:'DELETE'});loadMain();}catch(e){showErr(e);}});
+}
+async function runPlan(){
+  try{
+    const r=await api('/api/plan/run',{method:'POST',body:{use_forecast:false,mult:1.0,capacity_week:2900,optimize_method:'milp',auto_cap:30000}});
+    const pp=r.production_plan||{}; const wk=Object.keys(pp); const keys=wk[0]&&pp[wk[0]]?Object.keys(pp[wk[0]]):[];
+    groupBars('planChart', keys, wk.map(w=>({label:'W'+w, values:Object.fromEntries(keys.map(k=>[k,pp[w][k]||0]))})));
+    let rows=''; wk.forEach(w=>{const v=keys.map(k=>pp[w][k]!=null?fmt(pp[w][k]):'-');v.push(r.weekly_total&&r.weekly_total[w]!=null?fmt(r.weekly_total[w]):'-');rows+=trow(['W'+w].concat(v));});
+    const hkeys=keys.map(pn);
+    const opt=optionTxt(r.optimization);
+    const warnhtml=renderWarns(r.warnings||[]);
+    const cnt=(r.warnings||[]).length;
+    $('plan').innerHTML='<div class="note">'+opt+'　·　需求来源：'+esc(r.demand_source||'')+'　·　run_id='+esc(r.run_id||'')+'</div>'+
+      '<table><thead>'+thead(['周'].concat(hkeys,'合计'))+'</thead><tbody>'+rows+'</tbody></table><br>'+
+      '<b>物料净需求</b><table><thead>'+thead(['物料','净需求(件)','现有库存','安全库存'])+'</thead><tbody>'+Object.keys(r.mrp||{}).map(k=>trow([esc(mn(k)),fmt(r.mrp[k].net),fmt(r.mrp[k].on_hand),fmt(r.mrp[k].safety)])).join('')+'</tbody></table><br>'+
+      '<b>风险预警（'+cnt+' 条）</b><div>'+warnhtml+'</div>';
+    window.__runId=r.run_id;
+  }catch(e){showErr(e);}
+}
+async function runForecast(){
+  try{const r=await api('/api/forecast',{method:'POST',body:{horizon_weeks:4}});const f=r.forecast||{};
+    const fkeys=Object.keys(f); const nw=f[fkeys[0]]?f[fkeys[0]].weeks.length:4;
+    groupBars('fcChart', fkeys, Array.from({length:nw},(_,i)=>({label:'W'+(i+1), values:Object.fromEntries(fkeys.map(k=>[k,f[k].weeks[i]]))})));
+    $('forecast').innerHTML='<table><thead>'+thead(['产品','W1','W2','W3','W4','MAPE','model'])+'</thead><tbody>'+
+      fkeys.map(k=>trow([esc(pn(k))].concat(f[k].weeks.map(fmt),f[k].mape!==null?f[k].mape+'%':'-',(f[k].model||'').replace('statsmodels.','')))).join('')+'</tbody></table>';}
+  catch(e){showErr(e);}
+}
+async function generatePO(){
+  try{
+    if(!window.__runId) throw new Error('请先“运行计划”获得 run_id');
+    await api('/api/po/generate',{method:'POST',body:{run_id:window.__runId,auto_cap:30000}});
+    const orders=await api('/api/po');
+    $('po').innerHTML='<table><thead>'+thead(['单号','物料','数量','金额','状态','原因','审批'])+'</thead><tbody>'+
+      orders.map(o=>'<tr><td>'+o.po_no+'</td><td>'+esc(midn(o.material_id))+'</td><td>'+o.qty+'</td><td>'+money(o.amount)+'</td>'+
+      '<td><span class="pill '+(o.status==='auto'?'ok':(o.status==='approved'?'ok':'warn'))+'">'+esc(o.status)+'</span></td><td>'+esc(o.reason||'')+'</td>'+
+      '<td>'+(o.status==='auto'||o.status==='approved'?'-':'<button data-ap="'+o.id+'">审批</button>')+'</td></tr>').join('')+'</tbody></table>';
+    document.querySelectorAll('[data-ap]').forEach(b=>b.onclick=async()=>{try{await api('/api/po/'+b.dataset.ap+'/approve?action=approve');generatePO();}catch(e){showErr(e);}});
+  }catch(e){showErr(e);}
+}
+$('btnLogin').onclick=doLogin;
+$('btnRunPlan').onclick=()=>{ if(!TOKEN){note('请先登录');return;} runPlan(); };
+$('btnForecast').onclick=()=>{ if(!TOKEN){note('请先登录');return;} runForecast(); };
+$('btnPO').onclick=()=>{ if(!TOKEN){note('请先登录');return;} generatePO(); };
+$('btnAddOrder').onclick=async()=>{ if(!TOKEN){note('请先登录');return;} try{await api('/api/orders',{method:'POST',body:{product_id:$('oProd').value,week:+$('oWeek').value,qty:+$('oQty').value}});loadMain();}catch(e){showErr(e);} };
+$('btnAddProduct').onclick=async()=>{ if(!TOKEN){note('请先登录');return;} try{await api('/api/products',{method:'POST',body:{code:$('npCode').value,name:$('npName').value,unit_cost:+$('npCost').value||0}});$('npCode').value='';$('npName').value='';$('npCost').value='';loadMain();}catch(e){showErr(e);} };
+</script>
+</body>
+</html>
