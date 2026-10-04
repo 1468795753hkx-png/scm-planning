@@ -8,7 +8,7 @@ from ..models import Order, PlanRun, Product
 from ..schemas import ForecastRequest, PlanRunRequest
 from ..services.forecast import run_forecast
 from ..services.mrp import run_mrp
-from ..services.optimizer import heuristic_plan, milp_plan, plan_cost, _demand_map
+from ..services.optimizer import heuristic_plan, heuristic_cost_ot, milp_plan, _demand_map
 
 router = APIRouter(prefix="/api", tags=["plan"])
 _planeer = Depends(require_roles("admin", "planner"))
@@ -48,21 +48,23 @@ def _run(req: PlanRunRequest, db: Session, with_optimize: bool):
 
     production_override = None
     optimization = None
+    overtime = None
     if with_optimize and req.optimize_method == "milp":
-        prod, cost, status = milp_plan(demand_map, codes, req.capacity_week, horizon, unit_cost)
+        prod, cost, status, otime = milp_plan(demand_map, codes, req.capacity_week, horizon, unit_cost)
         if prod is None:
             prod = heuristic_plan(demand_map, codes, horizon)
             production_override = prod
             optimization = {"method": "milp", "status": status,
-                            "note": "产能不足以覆盖需求，已回退启发式"}
+                            "note": "产能（含加班上限）仍不足以覆盖需求，已回退启发式"}
         else:
             production_override = prod
-            hcost = plan_cost(heuristic_plan(demand_map, codes, horizon),
-                              demand_map, codes, horizon, unit_cost)
+            overtime = otime
+            hcost = heuristic_cost_ot(demand_map, codes, horizon, unit_cost, req.capacity_week)
+            saving = max(0.0, hcost - cost)
             optimization = {
                 "method": "milp", "status": status,
                 "milp_cost": round(cost, 2), "heuristic_cost": round(hcost, 2),
-                "saving": round(max(0, hcost - cost), 2),
+                "saving": round(saving, 2),
             }
     else:
         optimization = {"method": req.optimize_method or "heuristic"}
@@ -70,6 +72,8 @@ def _run(req: PlanRunRequest, db: Session, with_optimize: bool):
     result = run_mrp(db, capacity_week=req.capacity_week, mult=req.mult,
                      demand_orders=orders, production=production_override)
     result["optimization"] = optimization
+    if overtime is not None:
+        result["overtime"] = overtime
     if fc:
         result["forecast"] = fc
     result["demand_source"] = "forecast" if fc else "orders"

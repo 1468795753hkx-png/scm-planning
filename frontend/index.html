@@ -63,6 +63,7 @@
       <div><label>后端地址</label><input id="apiBase" value="http://127.0.0.1:8000" style="width:220px"></div>
       <div><label>用户名</label><input id="u" value="admin" style="width:100px"></div>
       <div><label>密码</label><input id="p" type="password" value="admin123" style="width:110px"></div>
+      <div><label>周产能(可调小演示加班/节省)</label><input id="capInput" type="number" value="2700" style="width:70px"></div>
       <button id="btnLogin" class="primary">登录并加载</button>
       <button id="btnRunPlan">运行计划</button>
       <button id="btnForecast">预测</button>
@@ -234,7 +235,8 @@ async function renderOrders(od){
 }
 async function runPlan(){
   try{
-    const r=await api('/api/plan/run',{method:'POST',body:{use_forecast:false,mult:1.0,capacity_week:2900,optimize_method:'milp',auto_cap:30000}});
+    const cap=+$('capInput').value||2900;
+    const r=await api('/api/plan/run',{method:'POST',body:{use_forecast:false,mult:1.0,capacity_week:cap,optimize_method:'milp',auto_cap:30000}});
     const pp=r.production_plan||{}; const wk=Object.keys(pp); const keys=wk[0]&&pp[wk[0]]?Object.keys(pp[wk[0]]):[];
     groupBars('planChart', keys, wk.map(w=>({label:'W'+w, values:Object.fromEntries(keys.map(k=>[k,pp[w][k]||0]))})));
     let rows=''; wk.forEach(w=>{const v=keys.map(k=>pp[w][k]!=null?fmt(pp[w][k]):'-');v.push(r.weekly_total&&r.weekly_total[w]!=null?fmt(r.weekly_total[w]):'-');rows+=trow(['W'+w].concat(v));});
@@ -242,7 +244,10 @@ async function runPlan(){
     const opt=optionTxt(r.optimization);
     const warnhtml=renderWarns(r.warnings||[]);
     const cnt=(r.warnings||[]).length;
-    $('plan').innerHTML='<div class="note">'+opt+'　·　需求来源：'+esc(r.demand_source||'')+'　·　run_id='+esc(r.run_id||'')+'</div>'+
+    const ot=r.overtime||{}; const otH=Object.keys(ot).filter(w=>ot[w]>0).map(w=>'W'+w+':'+ot[w]).join('，');
+    const otHtml=otH?('<div class="note">⚠️ 加班产出（超出常规产能的部分）：'+esc(otH)+' 单位</div>'):'';
+    $('plan').innerHTML='<div class="note">产能='+cap+'　·　'+opt+'　·　需求来源：'+esc(r.demand_source||'')+'　·　run_id='+esc(r.run_id||'')+'</div>'+
+      otHtml+
       '<table><thead>'+thead(['周'].concat(hkeys,'合计'))+'</thead><tbody>'+rows+'</tbody></table><br>'+
       '<b>物料净需求</b><table><thead>'+thead(['物料','净需求(件)','现有库存','安全库存'])+'</thead><tbody>'+Object.keys(r.mrp||{}).map(k=>trow([esc(mn(k)),fmt(r.mrp[k].net),fmt(r.mrp[k].on_hand),fmt(r.mrp[k].safety)])).join('')+'</tbody></table><br>'+
       '<b>风险预警（'+cnt+' 条）</b><div>'+warnhtml+'</div>';
