@@ -34,6 +34,15 @@ Python 3.11+ · FastAPI · SQLAlchemy · PuLP(MILP) · statsmodels · JWT · SQL
 
 详见 [`backend/README.md`](backend/README.md) 与 `SPEC.md`（设计文档）。
 
+## 在线演示：https://1468795753hkx-png.github.io/scm-planning-demo/
+本项目提供交互式前端演示，使用模拟数据展示需求与订单管理、主生产计划（MPS）、物料需求计划（MRP）、库存管理、采购建议及风险预警等核心功能。
+
+说明： 在线演示使用模拟数据，部分功能为前端交互模拟，不代表完整后端算法的实际运行结果。
+
+##完整项目源码
+
+完整项目源码、技术实现及本地部署说明，请参阅本仓库中的相关目录与文档。
+
 ## 目录
 
 ```
